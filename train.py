@@ -1,27 +1,62 @@
 import os
 import argparse
-from tqdm import trange
 import numpy as np
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
-import torch.utils.data as data
 import torchvision.transforms as transforms
+from torch.autograd import Variable
+import torch.utils.data as data
 
-from medmnist.mymodels import ResNet18, ResNet50
+import medmnist.models as models
 from medmnist.dataset import PathMNIST, ChestMNIST, DermaMNIST, OCTMNIST, PneumoniaMNIST, RetinaMNIST, \
     BreastMNIST, OrganMNISTAxial, OrganMNISTCoronal, OrganMNISTSagittal
 from medmnist.evaluator import getAUC, getACC, save_results
 from medmnist.info import INFO
 
+# construct the argument parser and parse the arguments
+ap = argparse.ArgumentParser()
+ap.add_argument('--model',
+				default='ResNet18',
+				help='training model, ResNet18 or ResNet50',
+				type=str)
+ap.add_argument('--data_name',
+				default='pathmnist',
+				help='subset of MedMNIST',
+				type=str)
+ap.add_argument('--input_root',
+				default='./input',
+				help='input root, the source of dataset files',
+				type=str)
+ap.add_argument('--output_root',
+				default='./output',
+				help='output root, where to save models and results',
+				type=str)
+ap.add_argument('--num_epoch',
+				default=100,
+				help='num of epochs of training',
+				type=int)
+ap.add_argument('--download',
+				default=False,
+				help='whether download the dataset or not',
+				type=bool)
+ap.add_argument('--resume',
+				default=None,
+				help='path of pretrained model',
+				type=str)
 
-def main(flag, input_root, output_root, start_epoch, end_epoch, download, lr, batch_size):
-    ''' main function
-    :param flag: name of subset
+args = ap.parse_args()
+data_name = args.data_name.lower()
+input_root = args.input_root
+output_root = args.output_root
+num_epoch = args.num_epoch
+download = args.download
+resume = args.resume
 
-    '''
 
-    flag_to_class = {
+flag_to_class = {
         "pathmnist": PathMNIST,
         "chestmnist": ChestMNIST,
         "dermamnist": DermaMNIST,
@@ -33,289 +68,217 @@ def main(flag, input_root, output_root, start_epoch, end_epoch, download, lr, ba
         "organmnist_coronal": OrganMNISTCoronal,
         "organmnist_sagittal": OrganMNISTSagittal,
     }
-    DataClass = flag_to_class[flag]
+DataClass = flag_to_class[data_name]
 
-    info = INFO[flag]
-    task = info['task']
-    n_channels = info['n_channels']
-    n_classes = len(info['label'])
-
-    #start_epoch = 0
-    #lr = 0.001
-    #batch_size = 128
-    val_auc_list = []
-    dir_path = os.path.join(output_root, '%s_checkpoints' % (flag))
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
-
-    print('==> Preparing data...')
-    train_transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Normalize(mean=[.5], std=[.5])])
-
-    val_transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Normalize(mean=[.5], std=[.5])])
-
-    test_transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Normalize(mean=[.5], std=[.5])])
-
-    train_dataset = DataClass(root=input_root,
-                              split='train',
-                              transform=train_transform,
-                              download=download)
-    train_loader = data.DataLoader(dataset=train_dataset,
-                                   batch_size=batch_size,
-                                   shuffle=True)
-    val_dataset = DataClass(root=input_root,
-                            split='val',
-                            transform=val_transform,
-                            download=download)
-    val_loader = data.DataLoader(dataset=val_dataset,
-                                 batch_size=batch_size,
-                                 shuffle=True)
-    test_dataset = DataClass(root=input_root,
-                             split='test',
-                             transform=test_transform,
-                             download=download)
-    test_loader = data.DataLoader(dataset=test_dataset,
-                                  batch_size=batch_size,
-                                  shuffle=True)
-
-    print('==> Building and training model...')
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = ResNet18(in_channels=n_channels, num_classes=n_classes).to(device)
-
-    if task == "multi-label, binary-class":
-        criterion = nn.BCEWithLogitsLoss()
-    else:
-        criterion = nn.CrossEntropyLoss()
-
-    if start_epoch >= 1:
-        saved_data = np.loadtxt(os.path.join(dir_path, 'save_data.txt'))
-        saved_data = np.reshape(saved_data, (-1, 2))
-        val_auc_array = saved_data[:, 1]
-        val_auc_list = val_auc_array.tolist()
-        if (start_epoch > len(val_auc_list)):
-            print("There are not enough models, start_epoch is automatically set to %d" % (len(val_auc_list)))
-            start_epoch = len(val_auc_list)
-        model_path = os.path.join(dir_path, 'ckpt_%d_auc_%.5f.pth' % (start_epoch - 1, val_auc_list[start_epoch - 1]))
-        model.load_state_dict(torch.load(model_path)['net'])
-
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-
-    for epoch in trange(start_epoch, end_epoch):
-        train(model, optimizer, criterion, train_loader, device, task)
-        val(model, val_loader, device, val_auc_list, task, dir_path, epoch)
-
-    auc_list = np.array(val_auc_list)
-    index = auc_list.argmax()
-    print('epoch %s is the best model' % (index))
-
-    print('==> Testing model...')
-    restore_model_path = os.path.join(
-        dir_path, 'ckpt_%d_auc_%.5f.pth' % (index, auc_list[index]))
-    model.load_state_dict(torch.load(restore_model_path)['net'])
-    test(model,
-         'train',
-         train_loader,
-         device,
-         flag,
-         task,
-         output_root=output_root)
-    test(model, 'val', val_loader, device, flag, task, output_root=output_root)
-    test(model,
-         'test',
-         test_loader,
-         device,
-         flag,
-         task,
-         output_root=output_root)
+info = INFO[data_name]
+task = info['task']
+n_channels = info['n_channels']
+n_classes = len(info['label'])
+model = getattr(models, args.model)(in_channels=n_channels, num_classes=n_classes)
 
 
-def train(model, optimizer, criterion, train_loader, device, task):
-    ''' training function
-    :param model: the model to train
-    :param optimizer: optimizer used in training
-    :param criterion: loss function
-    :param train_loader: DataLoader of training set
-    :param device: cpu or cuda
-    :param task: task of current dataset, binary-class/multi-class/multi-label, binary-class
-
-    '''
-
-    model.train()
-    for batch_idx, (inputs, targets) in enumerate(train_loader):
-        optimizer.zero_grad()
-        outputs = model(inputs.to(device))
-
-        if task == 'multi-label, binary-class':
-            targets = targets.to(torch.float32).to(device)
-            loss = criterion(outputs, targets)
-        else:
-            targets = targets.squeeze().long().to(device)
-            loss = criterion(outputs, targets)
-
-        loss.backward()
-        optimizer.step()
+lr = 0.001 #学习率
+momentum = 0.5
+batch_size = 128
 
 
-def val(model, val_loader, device, val_auc_list, task, dir_path, epoch):
-    ''' validation function
-    :param model: the model to validate
-    :param val_loader: DataLoader of validation set
-    :param device: cpu or cuda
-    :param val_auc_list: the list to save AUC score of each epoch
-    :param task: task of current dataset, binary-class/multi-class/multi-label, binary-class
-    :param dir_path: where to save model
-    :param epoch: current epoch
+print("Preparing data...")
+data_transform = transforms.Compose([
+	#transforms.Resize(),
+    transforms.ToTensor(),
+#    normalize
+])
+train_data_transform = transforms.Compose([
+	#transforms.Resize(),
+	#transforms.RandomRotation(90),
+	transforms.ToTensor(),
+	])
+train_data =  DataClass(root=input_root,
+						split='train',
+						transform=train_data_transform,
+						download=download)
+val_data = DataClass(root=input_root,
+					split='val',
+					transform=data_transform,
+					download=download)
+test_data =  DataClass(root=input_root,
+						split='test',
+						transform=data_transform,
+						download=download)
+train_loader = data.DataLoader(
+    train_data,
+    batch_size=batch_size,
+    shuffle=True
+)
+val_loader = data.DataLoader(
+	val_data,
+	batch_size=batch_size,
+	shuffle=False)
+test_loader = torch.utils.data.DataLoader(
+    test_data,
+    batch_size=batch_size,
+    shuffle=True
+)
 
-    '''
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = model.to(device)
+optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
 
-    model.eval()
+
+print("Training model...")
+
+def train(model, train_loader, task, device, epoch, optimizer):
+	''' One epoch training
+	return loss and accuracy
+	'''
+	model.train()
+	train_loss = 0
+	y_true = torch.tensor([]).to(device)
+	y_score = torch.tensor([]).to(device)
+	for batch_idx, (data, target) in enumerate(train_loader):
+		data, target = data.to(device), target.to(device)
+		data, target = Variable(data), Variable(target)
+		
+		optimizer.zero_grad()	
+		output = model(data)
+		#output = F.softmax(output,dim=1)
+		if task == 'multi-label, binary-class':
+			loss = F.binary_cross_entropy_with_logits(output, target.float())
+		else:
+			loss = F.cross_entropy(output, target.long().squeeze())
+			target = target.float()
+		
+		y_true = torch.cat((y_true, target))
+		y_score = torch.cat((y_score, F.softmax(output, dim=1)))
+
+		train_loss += loss.item()
+
+		loss.backward()
+		optimizer.step()
+
+	y_true = y_true.cpu().numpy()
+	y_score = y_score.detach().cpu().numpy()
+	acc = getACC(y_true, y_score, task)
+	train_loss /= len(train_loader)
+	return train_loss, acc
+
+def val(model, val_loader, task, device):
+	model.eval()
+
+	val_loss = 0
+	y_true = torch.tensor([]).to(device)
+	y_score = torch.tensor([]).to(device)
+	with torch.no_grad():
+		for batch_idx, (data, target) in enumerate(val_loader):
+			data = data.to(device)
+			target = target.to(device)
+		
+			output = model(data)
+
+			if task == 'multi-label, binary-class':
+				loss = F.binary_cross_entropy_with_logits(output, target.float())
+			else:
+				loss = F.cross_entropy(output, target.long().squeeze())
+				target = target.float()
+			val_loss += loss.item()
+			y_true = torch.cat((y_true, target))
+			y_score = torch.cat((y_score, F.softmax(output, dim=1)))
+
+
+	y_true = y_true.cpu().numpy()
+	y_score = y_score.cpu().numpy()
+	auc = getAUC(y_true, y_score, task)
+	acc = getACC(y_true, y_score, task)
+	val_loss /= len(val_loader)
+	return val_loss, auc, acc
+
+def test(model, test_loader, task, device):
+    model.eval()  
+    test_loss = 0
+
     y_true = torch.tensor([]).to(device)
     y_score = torch.tensor([]).to(device)
     with torch.no_grad():
-        for batch_idx, (inputs, targets) in enumerate(val_loader):
-            outputs = model(inputs.to(device))
+    	for batch_idx, (data, target) in enumerate(test_loader):
+ 
+        	data = data.to(device)
+        	target = target.to(device)
+        	output = model(data)
+        	#output = F.softmax(output,dim=1)
+        	if task == 'multi-label, binary-class':
+        		loss = F.binary_cross_entropy_with_logits(output, target.float())
+        	else:
+        		loss = F.cross_entropy(output, target.long().squeeze())
+        		target = target.float()
+        	test_loss += loss.item()
+        	y_true = torch.cat((y_true, target))
+        	y_score = torch.cat((y_score, F.softmax(output, dim=1)))
 
-            if task == 'multi-label, binary-class':
-                targets = targets.to(torch.float32).to(device)
-                m = nn.Sigmoid()
-                outputs = m(outputs).to(device)
-            else:
-                targets = targets.squeeze().long().to(device)
-                m = nn.Softmax(dim=1)
-                outputs = m(outputs).to(device)
-                targets = targets.float().resize_(len(targets), 1)
+    y_true = y_true.cpu().numpy()
+    y_score = y_score.cpu().numpy()
+    auc = getAUC(y_true, y_score, task)
+    acc = getACC(y_true, y_score, task)
+    test_loss /= len(test_loader)  
 
-            y_true = torch.cat((y_true, targets), 0)
-            y_score = torch.cat((y_score, outputs), 0)
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {:.4f}/{}\n'.format(
+        test_loss, acc, len(test_loader.dataset)))
 
-        y_true = y_true.cpu().numpy()
-        y_score = y_score.detach().cpu().numpy()
-        auc = getAUC(y_true, y_score, task)
-        val_auc_list.append(auc)
+    return test_loss, auc, acc
 
-    state = {
-        'net': model.state_dict(),
-        'auc': auc,
-        'epoch': epoch,
-    }
+dir_path = os.path.join(output_root, '%s_checkpoints' % (data_name))
+if not os.path.exists(dir_path):
+	os.makedirs(dir_path)
 
-    path = os.path.join(dir_path, 'ckpt_%d_auc_%.5f.pth' % (epoch, auc))
-    torch.save(state, path)
+train_loss = []
+train_acc = []
+val_loss = []
+val_auc = []
+val_acc = []
+start_epoch = 0
+if resume:
+	checkpoint = torch.load(resume)
+	model.load_state_dict(checkpoint['net'])
+	optimizer.load_state_dict(checkpoint['optimizer'])
+	start_epoch = checkpoint['epoch']
 
-    data_file = open(os.path.join(dir_path, 'save_data.txt'), 'a')
-    data_file.write(str(epoch) + ' ' + str(auc) + ' ' + "\n")
-    data_file.close()
+for epoch in range(start_epoch+1, num_epoch+1):
+	trainl, trainacc = train(model, train_loader, task, device, epoch, optimizer)
+	train_loss.append(trainl)
+	train_acc.append(trainacc)
 
-
-def test(model, split, data_loader, device, flag, task, output_root=None):
-    ''' testing function
-    :param model: the model to test
-    :param split: the data to test, 'train/val/test'
-    :param data_loader: DataLoader of data
-    :param device: cpu or cuda
-    :param flag: subset name
-    :param task: task of current dataset, binary-class/multi-class/multi-label, binary-class
-
-    '''
-
-    model.eval()
-    y_true = torch.tensor([]).to(device)
-    y_score = torch.tensor([]).to(device)
-
-    with torch.no_grad():
-        for batch_idx, (inputs, targets) in enumerate(data_loader):
-            outputs = model(inputs.to(device))
-
-            if task == 'multi-label, binary-class':
-                targets = targets.to(torch.float32).to(device)
-                m = nn.Sigmoid()
-                outputs = m(outputs).to(device)
-            else:
-                targets = targets.squeeze().long().to(device)
-                m = nn.Softmax(dim=1)
-                outputs = m(outputs).to(device)
-                targets = targets.float().resize_(len(targets), 1)
-
-            y_true = torch.cat((y_true, targets), 0)
-            y_score = torch.cat((y_score, outputs), 0)
-
-        y_true = y_true.cpu().numpy()
-        y_score = y_score.detach().cpu().numpy()
-        auc = getAUC(y_true, y_score, task)
-        acc = getACC(y_true, y_score, task)
-        print('%s AUC: %.5f ACC: %.5f' % (split, auc, acc))
-
-        if output_root is not None:
-            output_dir = os.path.join(output_root, flag)
-            if not os.path.exists(output_dir):
-                os.mkdir(output_dir)
-            output_path = os.path.join(output_dir, '%s.csv' % (split))
-            save_results(y_true, y_score, output_path)
+	print("Train Epoch : {}/{:.0f}\t Loss:{:.4f}\t Accuracy:{:.4f}".format(epoch, num_epoch, trainl, trainacc))
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='RUN Baseline model of MedMNIST')
-    parser.add_argument('--data_name',
-                        default='pathmnist',
-                        help='subset of MedMNIST',
-                        type=str)
-    parser.add_argument('--input_root',
-                        default='./input',
-                        help='input root, the source of dataset files',
-                        type=str)
-    parser.add_argument('--output_root',
-                        default='./output/ResNet18',
-                        help='output root, where to save models and results',
-                        type=str)
-    #parser.add_argument('--num_epoch',
-    #                    default=100,
-    #                    help='num of epochs of training',
-    #                    type=int)
-    parser.add_argument('--start_epoch',
-                        default=0,
-                        help='the start epoch',
-                        type=int)
-    parser.add_argument('--end_epoch',
-                        default=100,
-                        help='the end epoch',
-                        type=int)
-    parser.add_argument('--download',
-                        default=False,
-                        help='whether download the dataset or not',
-                        type=bool)
-    parser.add_argument('--learning_rate',
-                        default=0.001,
-                        help='the learning rate',
-                        type=float)
-    parser.add_argument('--batch_size',
-                        default=128,
-                        help='the batch size',
-                        type=int)
+	checkpoint = {
+	'net': model.state_dict(),
+	'optimizer': optimizer.state_dict(),
+	'epoch':epoch
+	}
+	trained_path = os.path.join(dir_path,'ckpt_%s.pth'%(str(epoch)))
+	torch.save(checkpoint, trained_path)
 
-    args = parser.parse_args()
-    data_name = args.data_name.lower()
-    input_root = args.input_root
-    output_root = args.output_root
-    #end_epoch = args.num_epoch
-    start_epoch = args.start_epoch
-    end_epoch = args.end_epoch
-    download = args.download
-    learning_rate = args.learning_rate
-    batch_size = args.batch_size
-    main(data_name,
-         input_root,
-         output_root,
-         start_epoch,
-         # end_epoch=end_epoch,
-         # download=download,
-         end_epoch,
-         download,
-         learning_rate,
-         batch_size)
+	print("State Saved")
+	
+	vall, valauc, valacc = val(model, val_loader, task, device)
+	val_loss.append(vall)
+	val_auc.append(valauc)
+	val_acc.append(valacc)
+
+#torch.save(model, output_root+'/classifier.pkl')
+
+N = np.arange(start_epoch+1, num_epoch-start_epoch+1)
+plt.style.use("ggplot")
+plt.figure()
+plt.plot(N, train_loss, label="train_loss")
+plt.plot(N, train_acc, label="train_acc")
+plt.plot(N, val_loss, label="val_loss")
+plt.plot(N, val_acc, label="val_acc")
+plt.title("Training Loss and Accuracy on %s (%s)" % (data_name, args.model))
+plt.xlabel("Epoch #")
+plt.ylabel("Loss/Accuracy")
+plt.legend()
+plt.savefig(os.path.join(output_root, "%s_result.jpg" % (data_name)))
+#plt.show()
+
+testl, testauc, testacc = test(model, test_loader, task, device)
+
