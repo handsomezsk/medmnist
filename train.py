@@ -86,12 +86,13 @@ print("Preparing data...")
 data_transform = transforms.Compose([
 	#transforms.Resize(),
     transforms.ToTensor(),
-#    normalize
+    transforms.Normalize(mean=[.5], std=[.5])
 ])
 train_data_transform = transforms.Compose([
 	#transforms.Resize(),
 	#transforms.RandomRotation(90),
 	transforms.ToTensor(),
+	transforms.Normalize(mean=[.5], std=[.5])
 	])
 train_data =  DataClass(root=input_root,
 						split='train',
