@@ -10,7 +10,7 @@ import torchvision.transforms as transforms
 from torch.autograd import Variable
 import torch.utils.data as data
 
-import medmnist.models as models
+import medmnist.mymodels as models
 from medmnist.dataset import PathMNIST, ChestMNIST, DermaMNIST, OCTMNIST, PneumoniaMNIST, RetinaMNIST, \
     BreastMNIST, OrganMNISTAxial, OrganMNISTCoronal, OrganMNISTSagittal
 from medmnist.evaluator import getAUC, getACC, save_results
@@ -221,8 +221,8 @@ def test(model, test_loader, task, device):
     acc = getACC(y_true, y_score, task)
     test_loss /= len(test_loader)  
 
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {:.4f}/{}\n'.format(
-        test_loss, acc, len(test_loader.dataset)))
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {:.4f}\n'.format(
+        test_loss, acc))
 
     return test_loss, auc, acc
 
@@ -242,6 +242,29 @@ if resume:
 	optimizer.load_state_dict(checkpoint['optimizer'])
 	start_epoch = checkpoint['epoch']
 
+
+saved_read = open(os.path.join(dir_path, 'save_data.txt'), 'r')
+content = saved_read.readlines()
+content_val = ''.join(content[:start_epoch])
+saved_write = open(os.path.join(dir_path, 'save_data.txt'), 'w')
+saved_write.write(content_val)
+saved_write.close()
+
+if start_epoch > 0:
+	saved_data = np.loadtxt(os.path.join(dir_path, 'save_data.txt'))
+	saved_data = np.reshape(saved_data, (-1, 6))
+	train_loss_array = saved_data[:, 1]
+	train_loss = train_loss_array.tolist()
+	train_acc_array = saved_data[:, 2]
+	train_acc = train_acc_array.tolist()
+	val_loss_array = saved_data[:, 3]
+	val_loss = val_loss_array.tolist()
+	val_auc_array = saved_data[:, 4]
+	val_auc = val_auc_array.tolist()
+	val_acc_array = saved_data[:, 5]
+	val_acc = val_acc_array.tolist()
+
+
 for epoch in range(start_epoch+1, num_epoch+1):
 	trainl, trainacc = train(model, train_loader, task, device, epoch, optimizer)
 	train_loss.append(trainl)
@@ -260,14 +283,17 @@ for epoch in range(start_epoch+1, num_epoch+1):
 
 	print("State Saved")
 	
-	vall, valauc, valacc = val(model, val_loader, task, device)
+	vall, valauc, valacc	 = val(model, val_loader, task, device)
+	data_file = open(os.path.join(dir_path, 'save_data.txt'), 'a')
+	data_file.write(str(epoch) + ' ' + str(trainl) + ' ' + str(trainacc) + ' ' + str(vall) + ' ' + str(valauc) + ' ' + str(valacc) + ' ' + "\n")
+	data_file.close()
 	val_loss.append(vall)
 	val_auc.append(valauc)
 	val_acc.append(valacc)
 
 #torch.save(model, output_root+'/classifier.pkl')
 
-N = np.arange(start_epoch+1, num_epoch-start_epoch+1)
+N = np.arange(num_epoch)
 plt.style.use("ggplot")
 plt.figure()
 plt.plot(N, train_loss, label="train_loss")
