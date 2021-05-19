@@ -292,4 +292,11 @@ plt.legend()
 plt.savefig(os.path.join(output_root, "%s_result.jpg" % (data_name)))
 # plt.show()
 
+val_acc_array = np.array(val_acc)
+index = val_acc_array.argmax()
+print('epoch %s is the best model' % (index+1))
+model_path =  os.path.join(dir_path, 'ckpt_%d.pth' % (index+1))
+checkpoint = torch.load(model_path)
+model.load_state_dict(checkpoint['net'])
+
 testl, testauc, testacc = test(model, test_loader, task, device)
