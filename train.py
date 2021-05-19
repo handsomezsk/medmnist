@@ -19,33 +19,33 @@ from medmnist.info import INFO
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument('--model',
-				default='ResNet18',
-				help='training model, ResNet18 or ResNet50',
-				type=str)
+                default='ResNet18',
+                help='training model, ResNet18 or ResNet50',
+                type=str)
 ap.add_argument('--data_name',
-				default='pathmnist',
-				help='subset of MedMNIST',
-				type=str)
+                default='pathmnist',
+                help='subset of MedMNIST',
+                type=str)
 ap.add_argument('--input_root',
-				default='./input',
-				help='input root, the source of dataset files',
-				type=str)
+                default='./input',
+                help='input root, the source of dataset files',
+                type=str)
 ap.add_argument('--output_root',
-				default='./output',
-				help='output root, where to save models and results',
-				type=str)
+                default='./output',
+                help='output root, where to save models and results',
+                type=str)
 ap.add_argument('--num_epoch',
-				default=100,
-				help='num of epochs of training',
-				type=int)
+                default=100,
+                help='num of epochs of training',
+                type=int)
 ap.add_argument('--download',
-				default=False,
-				help='whether download the dataset or not',
-				type=bool)
+                default=False,
+                help='whether download the dataset or not',
+                type=bool)
 ap.add_argument('--resume',
-				default=None,
-				help='path of pretrained model',
-				type=str)
+                default=None,
+                help='path of pretrained model',
+                type=str)
 
 args = ap.parse_args()
 data_name = args.data_name.lower()
@@ -55,19 +55,18 @@ num_epoch = args.num_epoch
 download = args.download
 resume = args.resume
 
-
 flag_to_class = {
-        "pathmnist": PathMNIST,
-        "chestmnist": ChestMNIST,
-        "dermamnist": DermaMNIST,
-        "octmnist": OCTMNIST,
-        "pneumoniamnist": PneumoniaMNIST,
-        "retinamnist": RetinaMNIST,
-        "breastmnist": BreastMNIST,
-        "organmnist_axial": OrganMNISTAxial,
-        "organmnist_coronal": OrganMNISTCoronal,
-        "organmnist_sagittal": OrganMNISTSagittal,
-    }
+    "pathmnist": PathMNIST,
+    "chestmnist": ChestMNIST,
+    "dermamnist": DermaMNIST,
+    "octmnist": OCTMNIST,
+    "pneumoniamnist": PneumoniaMNIST,
+    "retinamnist": RetinaMNIST,
+    "breastmnist": BreastMNIST,
+    "organmnist_axial": OrganMNISTAxial,
+    "organmnist_coronal": OrganMNISTCoronal,
+    "organmnist_sagittal": OrganMNISTSagittal,
+}
 DataClass = flag_to_class[data_name]
 
 info = INFO[data_name]
@@ -76,45 +75,43 @@ n_channels = info['n_channels']
 n_classes = len(info['label'])
 model = getattr(models, args.model)(in_channels=n_channels, num_classes=n_classes)
 
-
-lr = 0.001 #学习率
+lr = 0.001  # 学习率
 momentum = 0.5
 batch_size = 128
 
-
 print("Preparing data...")
 data_transform = transforms.Compose([
-	#transforms.Resize(),
+    # transforms.Resize(),
     transforms.ToTensor(),
     transforms.Normalize(mean=[.5], std=[.5])
 ])
 train_data_transform = transforms.Compose([
-	#transforms.Resize(),
-	#transforms.RandomRotation(90),
-	transforms.ToTensor(),
-	transforms.Normalize(mean=[.5], std=[.5])
-	])
-train_data =  DataClass(root=input_root,
-						split='train',
-						transform=train_data_transform,
-						download=download)
+    # transforms.Resize(),
+    # transforms.RandomRotation(90),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[.5], std=[.5])
+])
+train_data = DataClass(root=input_root,
+                       split='train',
+                       transform=train_data_transform,
+                       download=download)
 val_data = DataClass(root=input_root,
-					split='val',
-					transform=data_transform,
-					download=download)
-test_data =  DataClass(root=input_root,
-						split='test',
-						transform=data_transform,
-						download=download)
+                     split='val',
+                     transform=data_transform,
+                     download=download)
+test_data = DataClass(root=input_root,
+                      split='test',
+                      transform=data_transform,
+                      download=download)
 train_loader = data.DataLoader(
     train_data,
     batch_size=batch_size,
     shuffle=True
 )
 val_loader = data.DataLoader(
-	val_data,
-	batch_size=batch_size,
-	shuffle=False)
+    val_data,
+    batch_size=batch_size,
+    shuffle=False)
 test_loader = torch.utils.data.DataLoader(
     test_data,
     batch_size=batch_size,
@@ -125,110 +122,114 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = model.to(device)
 optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
 
-
 print("Training model...")
 
-def train(model, train_loader, task, device, epoch, optimizer):
-	''' One epoch training
-	return loss and accuracy
-	'''
-	model.train()
-	train_loss = 0
-	y_true = torch.tensor([]).to(device)
-	y_score = torch.tensor([]).to(device)
-	for batch_idx, (data, target) in enumerate(train_loader):
-		data, target = data.to(device), target.to(device)
-		data, target = Variable(data), Variable(target)
-		
-		optimizer.zero_grad()	
-		output = model(data)
-		#output = F.softmax(output,dim=1)
-		if task == 'multi-label, binary-class':
-			loss = F.binary_cross_entropy_with_logits(output, target.float())
-		else:
-			loss = F.cross_entropy(output, target.long().squeeze())
-			target = target.float()
-		
-		y_true = torch.cat((y_true, target))
-		y_score = torch.cat((y_score, F.softmax(output, dim=1)))
 
-		train_loss += loss.item()
+def train(model, train_loader, task, device, optimizer):
+    ''' One epoch training
+    return loss and accuracy
+    '''
+    model.train()
+    train_loss = 0
+    y_true = torch.tensor([]).to(device)
+    y_score = torch.tensor([]).to(device)
+    for batch_idx, (data, target) in enumerate(train_loader):
+        data, target = data.to(device), target.to(device)
+        data, target = Variable(data), Variable(target)
 
-		loss.backward()
-		optimizer.step()
+        optimizer.zero_grad()
+        output = model(data)
+        # output = F.softmax(output,dim=1)
+        if task == 'multi-label, binary-class':
+            loss = F.binary_cross_entropy_with_logits(output, target.float())
+        else:
+            loss = F.cross_entropy(output, target.long().squeeze())
+            target = target.float()
 
-	y_true = y_true.cpu().numpy()
-	y_score = y_score.detach().cpu().numpy()
-	acc = getACC(y_true, y_score, task)
-	train_loss /= len(train_loader)
-	return train_loss, acc
+        y_true = torch.cat((y_true, target))
+        y_score = torch.cat((y_score, F.softmax(output, dim=1)))
+
+        train_loss += loss.item()
+
+        loss.backward()
+        optimizer.step()
+
+    y_true = y_true.cpu().numpy()
+    y_score = y_score.detach().cpu().numpy()
+    acc = getACC(y_true, y_score, task)
+    train_loss /= len(train_loader)
+    return train_loss, acc
+
 
 def val(model, val_loader, task, device):
-	model.eval()
+    model.eval()
 
-	val_loss = 0
-	y_true = torch.tensor([]).to(device)
-	y_score = torch.tensor([]).to(device)
-	with torch.no_grad():
-		for batch_idx, (data, target) in enumerate(val_loader):
-			data = data.to(device)
-			target = target.to(device)
-		
-			output = model(data)
-
-			if task == 'multi-label, binary-class':
-				loss = F.binary_cross_entropy_with_logits(output, target.float())
-			else:
-				loss = F.cross_entropy(output, target.long().squeeze())
-				target = target.float()
-			val_loss += loss.item()
-			y_true = torch.cat((y_true, target))
-			y_score = torch.cat((y_score, F.softmax(output, dim=1)))
-
-
-	y_true = y_true.cpu().numpy()
-	y_score = y_score.cpu().numpy()
-	auc = getAUC(y_true, y_score, task)
-	acc = getACC(y_true, y_score, task)
-	val_loss /= len(val_loader)
-	return val_loss, auc, acc
-
-def test(model, test_loader, task, device):
-    model.eval()  
-    test_loss = 0
-
+    val_loss = 0
     y_true = torch.tensor([]).to(device)
     y_score = torch.tensor([]).to(device)
     with torch.no_grad():
-    	for batch_idx, (data, target) in enumerate(test_loader):
- 
-        	data = data.to(device)
-        	target = target.to(device)
-        	output = model(data)
-        	#output = F.softmax(output,dim=1)
-        	if task == 'multi-label, binary-class':
-        		loss = F.binary_cross_entropy_with_logits(output, target.float())
-        	else:
-        		loss = F.cross_entropy(output, target.long().squeeze())
-        		target = target.float()
-        	test_loss += loss.item()
-        	y_true = torch.cat((y_true, target))
-        	y_score = torch.cat((y_score, F.softmax(output, dim=1)))
+        for batch_idx, (data, target) in enumerate(val_loader):
+            data = data.to(device)
+            target = target.to(device)
+
+            output = model(data)
+
+            if task == 'multi-label, binary-class':
+                loss = F.binary_cross_entropy_with_logits(output, target.float())
+            else:
+                loss = F.cross_entropy(output, target.long().squeeze())
+                target = target.float()
+            val_loss += loss.item()
+            y_true = torch.cat((y_true, target))
+            y_score = torch.cat((y_score, F.softmax(output, dim=1)))
 
     y_true = y_true.cpu().numpy()
     y_score = y_score.cpu().numpy()
     auc = getAUC(y_true, y_score, task)
     acc = getACC(y_true, y_score, task)
-    test_loss /= len(test_loader)  
+    val_loss /= len(val_loader)
+    return val_loss, auc, acc
+
+
+def test(model, test_loader, task, device):
+    model.eval()
+    test_loss = 0
+
+    y_true = torch.tensor([]).to(device)
+    y_score = torch.tensor([]).to(device)
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(test_loader):
+
+            data = data.to(device)
+            target = target.to(device)
+            output = model(data)
+            # output = F.softmax(output,dim=1)
+            if task == 'multi-label, binary-class':
+                loss = F.binary_cross_entropy_with_logits(output, target.float())
+            else:
+                loss = F.cross_entropy(output, target.long().squeeze())
+                target = target.float()
+            test_loss += loss.item()
+            y_true = torch.cat((y_true, target))
+            y_score = torch.cat((y_score, F.softmax(output, dim=1)))
+
+    y_true = y_true.cpu().numpy()
+    y_score = y_score.cpu().numpy()
+    auc = getAUC(y_true, y_score, task)
+    acc = getACC(y_true, y_score, task)
+    test_loss /= len(test_loader)
 
     print('\nTest set: Average loss: {:.4f}, Accuracy: {:.4f}\n'.format(
         test_loss, acc))
 
     return test_loss, auc, acc
 
+
+model_name = args.model
+output_root = os.path.join(output_root, '%s' % (model_name))
 dir_path = os.path.join(output_root, '%s_checkpoints' % (data_name))
 if not os.path.exists(dir_path):
-	os.makedirs(dir_path)
+    os.makedirs(dir_path)
 
 train_loss = []
 train_acc = []
@@ -237,61 +238,59 @@ val_auc = []
 val_acc = []
 start_epoch = 0
 if resume:
-	checkpoint = torch.load(resume)
-	model.load_state_dict(checkpoint['net'])
-	optimizer.load_state_dict(checkpoint['optimizer'])
-	start_epoch = checkpoint['epoch']
-
-
-saved_read = open(os.path.join(dir_path, 'save_data.txt'), 'r')
-content = saved_read.readlines()
-content_val = ''.join(content[:start_epoch])
-saved_write = open(os.path.join(dir_path, 'save_data.txt'), 'w')
-saved_write.write(content_val)
-saved_write.close()
+    checkpoint = torch.load(resume)
+    model.load_state_dict(checkpoint['net'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    start_epoch = checkpoint['epoch']
 
 if start_epoch > 0:
-	saved_data = np.loadtxt(os.path.join(dir_path, 'save_data.txt'))
-	saved_data = np.reshape(saved_data, (-1, 6))
-	train_loss_array = saved_data[:, 1]
-	train_loss = train_loss_array.tolist()
-	train_acc_array = saved_data[:, 2]
-	train_acc = train_acc_array.tolist()
-	val_loss_array = saved_data[:, 3]
-	val_loss = val_loss_array.tolist()
-	val_auc_array = saved_data[:, 4]
-	val_auc = val_auc_array.tolist()
-	val_acc_array = saved_data[:, 5]
-	val_acc = val_acc_array.tolist()
+    saved_read = open(os.path.join(dir_path, 'save_data.txt'), 'r')
+    content = saved_read.readlines()
+    content_val = ''.join(content[:start_epoch])
+    saved_write = open(os.path.join(dir_path, 'save_data.txt'), 'w')
+    saved_write.write(content_val)
+    saved_write.close()
+    saved_data = np.loadtxt(os.path.join(dir_path, 'save_data.txt'))
+    saved_data = np.reshape(saved_data, (-1, 6))
+    train_loss_array = saved_data[:, 1]
+    train_loss = train_loss_array.tolist()
+    train_acc_array = saved_data[:, 2]
+    train_acc = train_acc_array.tolist()
+    val_loss_array = saved_data[:, 3]
+    val_loss = val_loss_array.tolist()
+    val_auc_array = saved_data[:, 4]
+    val_auc = val_auc_array.tolist()
+    val_acc_array = saved_data[:, 5]
+    val_acc = val_acc_array.tolist()
 
+for epoch in range(start_epoch + 1, num_epoch + 1):
+    trainl, trainacc = train(model, train_loader, task, device, optimizer)
+    train_loss.append(trainl)
+    train_acc.append(trainacc)
 
-for epoch in range(start_epoch+1, num_epoch+1):
-	trainl, trainacc = train(model, train_loader, task, device, epoch, optimizer)
-	train_loss.append(trainl)
-	train_acc.append(trainacc)
+    print("Train Epoch : {}/{:.0f}\t Loss:{:.4f}\t Accuracy:{:.4f}".format(epoch, num_epoch, trainl, trainacc))
 
-	print("Train Epoch : {}/{:.0f}\t Loss:{:.4f}\t Accuracy:{:.4f}".format(epoch, num_epoch, trainl, trainacc))
+    checkpoint = {
+        'net': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'epoch': epoch
+    }
+    trained_path = os.path.join(dir_path, 'ckpt_%s.pth' % (str(epoch)))
+    torch.save(checkpoint, trained_path)
 
+    print("State Saved")
 
-	checkpoint = {
-	'net': model.state_dict(),
-	'optimizer': optimizer.state_dict(),
-	'epoch':epoch
-	}
-	trained_path = os.path.join(dir_path,'ckpt_%s.pth'%(str(epoch)))
-	torch.save(checkpoint, trained_path)
+    vall, valauc, valacc = val(model, val_loader, task, device)
+    data_file = open(os.path.join(dir_path, 'save_data.txt'), 'a')
+    data_file.write(
+        str(epoch) + ' ' + str(trainl) + ' ' + str(trainacc) + ' ' + str(vall) + ' ' + str(valauc) + ' ' + str(
+            valacc) + ' ' + "\n")
+    data_file.close()
+    val_loss.append(vall)
+    val_auc.append(valauc)
+    val_acc.append(valacc)
 
-	print("State Saved")
-	
-	vall, valauc, valacc	 = val(model, val_loader, task, device)
-	data_file = open(os.path.join(dir_path, 'save_data.txt'), 'a')
-	data_file.write(str(epoch) + ' ' + str(trainl) + ' ' + str(trainacc) + ' ' + str(vall) + ' ' + str(valauc) + ' ' + str(valacc) + ' ' + "\n")
-	data_file.close()
-	val_loss.append(vall)
-	val_auc.append(valauc)
-	val_acc.append(valacc)
-
-#torch.save(model, output_root+'/classifier.pkl')
+# torch.save(model, output_root+'/classifier.pkl')
 
 N = np.arange(num_epoch)
 plt.style.use("ggplot")
@@ -305,7 +304,6 @@ plt.xlabel("Epoch #")
 plt.ylabel("Loss/Accuracy")
 plt.legend()
 plt.savefig(os.path.join(output_root, "%s_result.jpg" % (data_name)))
-#plt.show()
+# plt.show()
 
 testl, testauc, testacc = test(model, test_loader, task, device)
-
