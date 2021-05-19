@@ -75,7 +75,7 @@ n_channels = info['n_channels']
 n_classes = len(info['label'])
 model = getattr(models, args.model)(in_channels=n_channels, num_classes=n_classes)
 
-lr = 0.001  # 学习率
+lr = 0.001  # 学习率 
 momentum = 0.9
 batch_size = 128
 
