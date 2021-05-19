@@ -257,11 +257,6 @@ for epoch in range(start_epoch + 1, num_epoch + 1):
     print("Train Epoch : {}/{:.0f}\t Loss:{:.4f}\t Accuracy:{:.4f}".format(epoch, num_epoch, trainl, trainacc))
 
     vall, valauc, valacc = val(model, val_loader, task, device)
-    data_file = open(os.path.join(dir_path, 'save_data.txt'), 'a')
-    data_file.write(
-        str(epoch) + ' ' + str(trainl) + ' ' + str(trainacc) + ' ' + str(vall) + ' ' + str(valauc) + ' ' + str(
-            valacc) + ' ' + "\n")
-    data_file.close()
     val_loss.append(vall)
     val_auc.append(valauc)
     val_acc.append(valacc)
