@@ -13,7 +13,7 @@ import torch.utils.data as data
 import medmnist.mymodels as models
 from medmnist.dataset import PathMNIST, ChestMNIST, DermaMNIST, OCTMNIST, PneumoniaMNIST, RetinaMNIST, \
     BreastMNIST, OrganMNISTAxial, OrganMNISTCoronal, OrganMNISTSagittal
-from medmnist.evaluator import getAUC, getACC, save_results
+from medmnist.evaluator import getAUC, getACC
 from medmnist.info import INFO
 
 # construct the argument parser and parse the arguments
@@ -76,7 +76,7 @@ n_classes = len(info['label'])
 model = getattr(models, args.model)(in_channels=n_channels, num_classes=n_classes)
 
 lr = 0.001  # 学习率
-momentum = 0.5
+momentum = 0.9
 batch_size = 128
 
 print("Preparing data...")
@@ -242,26 +242,12 @@ if resume:
     model.load_state_dict(checkpoint['net'])
     optimizer.load_state_dict(checkpoint['optimizer'])
     start_epoch = checkpoint['epoch']
+    train_loss = checkpoint['train_loss']
+    train_acc = checkpoint['train_acc']
+    val_loss = checkpoint['val_loss']
+    val_auc = checkpoint['val_auc']
+    val_acc = checkpoint['val_acc']
 
-if start_epoch > 0:
-    saved_read = open(os.path.join(dir_path, 'save_data.txt'), 'r')
-    content = saved_read.readlines()
-    content_val = ''.join(content[:start_epoch])
-    saved_write = open(os.path.join(dir_path, 'save_data.txt'), 'w')
-    saved_write.write(content_val)
-    saved_write.close()
-    saved_data = np.loadtxt(os.path.join(dir_path, 'save_data.txt'))
-    saved_data = np.reshape(saved_data, (-1, 6))
-    train_loss_array = saved_data[:, 1]
-    train_loss = train_loss_array.tolist()
-    train_acc_array = saved_data[:, 2]
-    train_acc = train_acc_array.tolist()
-    val_loss_array = saved_data[:, 3]
-    val_loss = val_loss_array.tolist()
-    val_auc_array = saved_data[:, 4]
-    val_auc = val_auc_array.tolist()
-    val_acc_array = saved_data[:, 5]
-    val_acc = val_acc_array.tolist()
 
 for epoch in range(start_epoch + 1, num_epoch + 1):
     trainl, trainacc = train(model, train_loader, task, device, optimizer)
@@ -269,16 +255,6 @@ for epoch in range(start_epoch + 1, num_epoch + 1):
     train_acc.append(trainacc)
 
     print("Train Epoch : {}/{:.0f}\t Loss:{:.4f}\t Accuracy:{:.4f}".format(epoch, num_epoch, trainl, trainacc))
-
-    checkpoint = {
-        'net': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'epoch': epoch
-    }
-    trained_path = os.path.join(dir_path, 'ckpt_%s.pth' % (str(epoch)))
-    torch.save(checkpoint, trained_path)
-
-    print("State Saved")
 
     vall, valauc, valacc = val(model, val_loader, task, device)
     data_file = open(os.path.join(dir_path, 'save_data.txt'), 'a')
@@ -289,6 +265,21 @@ for epoch in range(start_epoch + 1, num_epoch + 1):
     val_loss.append(vall)
     val_auc.append(valauc)
     val_acc.append(valacc)
+
+    checkpoint = {
+        'net': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'epoch': epoch,
+        'train_loss': train_loss,
+        'train_acc': train_acc,
+        'val_loss': val_loss,
+        'val_auc': val_auc,
+        'val_acc': val_acc
+    }
+    trained_path = os.path.join(dir_path, 'ckpt_%s.pth' % (str(epoch)))
+    torch.save(checkpoint, trained_path)
+
+    print("State Saved")
 
 # torch.save(model, output_root+'/classifier.pkl')
 
